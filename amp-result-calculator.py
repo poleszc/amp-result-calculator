@@ -9,22 +9,24 @@ from PyQt6.QtCore import Qt
 import pandas as pd
 from pprint import pprint
 
-id_to_discipline = {
+ID_TO_DISCIPLINE = {
     0: "Prowadzenie:          ",
     1: "Wspinanie na czas:",
     2: "Bouldering:             ",
 }
 
-id_to_discipline_2 = {
-    0: "Prowadzenie",
-    1: "Wspinanie na czas",
-    2: "Bouldering",
+ID_TO_DISCIPLINE_2 = {
+    0: "prowadzenie",
+    1: "wspinanie na czas",
+    2: "bouldering",
 }
-ix_to_discipline = {
+IX_TO_DISCIPLINE = {
     0: "lead",
     1: "speed",
     2: "boulder"
 }
+
+NUMBER_OF_COUNTED_ATHLETES = 3
 
 class AthleteAnalyzerApp(QMainWindow):
     def __init__(self):
@@ -61,7 +63,7 @@ class AthleteAnalyzerApp(QMainWindow):
         for i in range(3):
             row_layout = QHBoxLayout()
             
-            label = QLabel(f"{id_to_discipline[i]}")
+            label = QLabel(f"{ID_TO_DISCIPLINE[i]}")
             row_layout.addWidget(label)
             
             path_label = QLabel("Nie wybrano pliku")
@@ -79,7 +81,7 @@ class AthleteAnalyzerApp(QMainWindow):
         analyze_btn.clicked.connect(self.analyze_files)
         
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Zawodnik", "Konkurencja", "Wynik"])
+        self.tree.setHeaderLabels(["Miejsce", "Uczelnia", "Typ", "Liczba Punktów"])
         self.tree.setColumnWidth(0, 200)
         
         scroll_area = QScrollArea()
@@ -96,7 +98,7 @@ class AthleteAnalyzerApp(QMainWindow):
     def select_file(self, index):
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            f"Wybierz plik z wynikami konkurencji {id_to_discipline_2[index]}",
+            f"Wybierz plik z wynikami konkurencji {ID_TO_DISCIPLINE_2[index]}",
             "",
             "Excel Files (*.xlsx *.xls);;All Files (*)"
         )
@@ -159,36 +161,39 @@ class AthleteAnalyzerApp(QMainWindow):
                         "points": 0
                     }
 
-                self.team_results[team_name]["athletes"][ix_to_discipline[ix]][athlete_name] = {"place": athlete_place, "points": athlete_points}
+                self.team_results[team_name]["athletes"][IX_TO_DISCIPLINE[ix]][athlete_name] = {"place": athlete_place, "points": athlete_points}
             
+
+        # Calculate team points and check if teams are classified.
+        for team_name, team_data in self.team_results.items():
+            # Check if a team is classified:
+            # At least NUMBER_OF_COUNTED_ATHLETES(3 for men, 2 for women) athletes competed and finish at least 2 disciplines
+            athlete_scores = {}
+            for disc in ["lead", "speed", "boulder"]:
+                for ath_name, results in team_data["athletes"][disc].items():
+                    if ath_name not in athlete_scores:
+                        athlete_scores[ath_name] = []
+                    athlete_scores[ath_name].append(results["points"])
+            
+            classified = False
+            ok_athletes_count = 0
+            for name, results in athlete_scores.items():
+                if len(results) > 2:
+                    ok_athletes_count += 1
+            if len(athlete_scores) >= NUMBER_OF_COUNTED_ATHLETES and ok_athletes_count >= NUMBER_OF_COUNTED_ATHLETES:
+                classified = True
+
+            # Calculate points
+            points = []
+            for disc in ["lead", "speed", "boulder"]:
+                athletes = team_data["athletes"][disc]
+                valid_athletes = [ath for ath in athletes.values() if ath["points"] != -1]
+                top_athletes = sorted(valid_athletes, key=lambda x: x["points"], reverse=True)
+                points.extend([ath["points"] for ath in top_athletes[:NUMBER_OF_COUNTED_ATHLETES]])
+            team_data["points"] = -1 if not classified else sum(points)
+
         pprint(self.team_results, indent=2, width=50, sort_dicts=False)
 
-        
-    
-
-        
-        for i, file_path in enumerate(self.file_paths):
-            discipline = f"Konkurencja {i+1}"
-            df = pd.read_excel(file_path)
-            
-            for _, row in df.iterrows():
-                athlete_name = str(row.iloc[0])
-                score = float(row.iloc[1])
-                
-                athlete = next((a for a in self.results if a['name'] == athlete_name), None)
-                if athlete:
-                    athlete['results'].append((discipline, score))
-                else:
-                    self.results.append({
-                        'name': athlete_name,
-                        'discipline': discipline,
-                        'results': [(discipline, score)]
-                    })
-        
-        # Sortowanie wyników
-        for athlete in self.results:
-            athlete['results'].sort(key=lambda x: x[1], reverse=True)
-        
         self.display_results()
         
         # except Exception as e:
@@ -197,15 +202,70 @@ class AthleteAnalyzerApp(QMainWindow):
     def display_results(self):
         self.tree.clear()
         
-        for athlete in sorted(self.results, key=lambda x: x['name']):
-            athlete_item = QTreeWidgetItem(self.tree)
-            athlete_item.setText(0, athlete['name'])
-            athlete_item.setExpanded(True)
+        # teams_data = []
+        # for team_name, team_data in self.team_results.items():
+        #     team_data["name"] = team_name
+        #     teams_data.append(teams_data)
+
+        teams_data = []
+        for uni_name, uni_data in self.team_results.items():
+            team_info = {
+                'name': uni_name,
+                'type': uni_data.get('type', 'Unknown'),
+                'points': uni_data.get('points', -1),
+                'athletes': uni_data.get('athletes', {})
+            }
+            teams_data.append(team_info)
+
+        teams_data.sort(key=lambda x: x["points"], reverse=True)
+        
+
+
+        for position, team in enumerate(teams_data, 1):
+            team_item = QTreeWidgetItem(self.tree)
             
-            for discipline, score in athlete['results']:
-                result_item = QTreeWidgetItem(athlete_item)
-                result_item.setText(1, discipline)
-                result_item.setText(2, f"{score:.2f}")
+            team_item.setText(0, str(position) if team['points'] != -1 else "-")
+            team_item.setText(1, team['name'])
+            team_item.setText(2, team.get('type', 'Nieznany typ uczelni'))
+            
+            # Punkty i status
+            if team['points'] == -1:
+                team_item.setText(3, "N/A")
+                team_item.setForeground(1, Qt.GlobalColor.red)
+            else:
+                team_item.setText(3, str(team['points']))
+                team_item.setForeground(4, Qt.GlobalColor.darkGreen)
+            
+            # Kolorowanie podium
+            # if position <= 3 and team['points'] != -1:
+            #     colors = [QColor(255, 215, 0), QColor(192, 192, 192), QColor(205, 127, 50)]
+            #     for col in range(5):
+            #         team_item.setBackground(col, colors[position-1])
+            
+            # Szczegóły wyników
+            self.add_athlete_details(team_item, team.get('athletes', {}))
+            
+            # Rozwijanie tylko dla klasyfikowanych
+            team_item.setExpanded(True)
+
+    def add_athlete_details(self, parent_item, athletes_data):
+        details_item = QTreeWidgetItem(parent_item)
+        details_item.setText(0, "Szczegóły wyników")
+        
+        for discipline, athletes in athletes_data.items():
+            discipline_item = QTreeWidgetItem(details_item)
+            discipline_item.setText(0, f"Konkurencja: {discipline.capitalize()}")
+            
+            for athlete_name, results in athletes.items():
+                athlete_item = QTreeWidgetItem(discipline_item)
+                athlete_item.setText(0, athlete_name)
+                
+                if results['points'] == -1:
+                    athlete_item.setText(1, "Nie ukończył")
+                    athlete_item.setForeground(1, Qt.GlobalColor.gray)
+                else:
+                    athlete_item.setText(1, f"Miejsce: {results['place']}")
+                    athlete_item.setText(2, f"Punkty: {results['points']}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

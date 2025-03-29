@@ -39,3 +39,4 @@ Numer Startowyy | Imię i Nazwisko |       Uczelnia            | Typ Uczelni   |
 - DNF liczy się jako osoba startujaca w konkurencji prawda?
 - Czy osoby ktore w czasówkach maja wynik DNF mają eqaequo ostatnie miejsce?
 - Osoby niestartujące w danej konkurencji mogą pojawić się w tabeli, ale w kolumnie miejsce powinnien pojawić wówczas wynik "DNS"
+- Czy wystartuje i ukończy to znaczy ze na czasówce nie mozna spaśc?
