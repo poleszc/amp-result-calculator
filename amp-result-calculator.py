@@ -2,7 +2,7 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem,
-    QMessageBox, QScrollArea
+    QMessageBox, QScrollArea, QCheckBox, QComboBox
 )
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import Qt
@@ -21,9 +21,9 @@ ID_TO_DISCIPLINE_2 = {
     2: "bouldering",
 }
 IX_TO_DISCIPLINE = {
-    0: "lead",
-    1: "speed",
-    2: "boulder"
+    0: "prowadzenie",
+    1: "czas",
+    2: "bouldering"
 }
 
 NUMBER_OF_COUNTED_ATHLETES = 3
@@ -37,6 +37,7 @@ class AthleteAnalyzerApp(QMainWindow):
         self.file_paths = [None, None, None]
         self.results = []
         self.max_participants = 0
+        self.number_of_counted_athletes = 3
         self.team_results = {}
 
         
@@ -77,9 +78,32 @@ class AthleteAnalyzerApp(QMainWindow):
             file_layout.addLayout(row_layout)
             setattr(self, f"path_label_{i}", path_label)
         
+        buttons_layout = QHBoxLayout()
+        
+        classification_layout = QHBoxLayout()
+        self.women_checkbox = QCheckBox("Klasyfikacja kobiet (licz 2 najlepszych zawodników)")
+        self.women_checkbox.stateChanged.connect(self.toggle_classification)
+        classification_layout.addWidget(self.women_checkbox)
+        file_layout.addLayout(classification_layout)
+
         analyze_btn = QPushButton("Analizuj wyniki")
         analyze_btn.clicked.connect(self.analyze_files)
+        buttons_layout.addWidget(analyze_btn)
         
+        file_layout.addLayout(buttons_layout)
+        main_layout.addWidget(file_group)
+        
+        filter_layout = QHBoxLayout()
+        filter_label = QLabel("Filtruj typ uczelni:")
+        self.filter_combo = QComboBox()
+        self.filter_combo.addItem("Wszystkie")
+        self.filter_combo.currentTextChanged.connect(self.filter_results)
+        filter_layout.addWidget(filter_label)
+        filter_layout.addWidget(self.filter_combo)
+        filter_layout.addStretch()
+        
+        main_layout.addLayout(filter_layout)
+
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Miejsce", "Uczelnia", "Typ", "Liczba Punktów"])
         self.tree.setColumnWidth(0, 200)
@@ -88,9 +112,16 @@ class AthleteAnalyzerApp(QMainWindow):
         scroll_area.setWidgetResizable(True)
         scroll_area.setWidget(self.tree)
         
-        main_layout.addWidget(file_group)
-        main_layout.addWidget(analyze_btn)
         main_layout.addWidget(scroll_area, 1)
+
+        bottom_layout = QHBoxLayout()
+        
+        export_btn = QPushButton("Eksportuj do Excel")
+        export_btn.clicked.connect(self.export_to_excel)
+        
+        bottom_layout.addStretch()
+        bottom_layout.addWidget(export_btn)
+        main_layout.addLayout(bottom_layout)
         
         main_widget.setLayout(main_layout)
         self.setCentralWidget(main_widget)
@@ -106,7 +137,19 @@ class AthleteAnalyzerApp(QMainWindow):
         if file_path:
             self.file_paths[index] = file_path
             getattr(self, f"path_label_{index}").setText(file_path)
+
+    def toggle_classification(self, state):
+        self.number_of_counted_athletes = 2 if state == Qt.CheckState.Checked.value else 3
     
+    def filter_results(self, selected_type):
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            if selected_type == "Wszystkie":
+                item.setHidden(False)
+            else:
+                item_type = item.text(2)
+                item.setHidden(item_type != selected_type)
+
     def analyze_files(self):
         if None in self.file_paths:
             QMessageBox.warning(self, "Błąd", "Proszę wybrać wszystkie 3 pliki!")
@@ -130,6 +173,7 @@ class AthleteAnalyzerApp(QMainWindow):
 
         # Populate the team results
         for ix, disc in enumerate([lead, speed, boulder]):
+            print(IX_TO_DISCIPLINE[ix])
             for _, row in disc.iterrows():
                 team_name = str(row["Uczelnia"])
                 team_type = str(row["Typ"])
@@ -141,7 +185,7 @@ class AthleteAnalyzerApp(QMainWindow):
 
                 if row["Miejsce"] != "DNS":
                     athlete_place = int(row["Miejsce"]) if row["Miejsce"] != "DNF" else len(speed[~speed["Miejsce"].isin(["DNS", "DNF"])])
-                    # Athlete points are calculated by this formula;
+                    # Athlete points are calculated as follows;
                     # 1 place -> n + 1 points(this is not a mistype, we add a point for winners)
                     # 2 place -> n - 1 points
                     # 3 place -> n - 2 points
@@ -154,9 +198,9 @@ class AthleteAnalyzerApp(QMainWindow):
                     self.team_results[team_name] = {
                         "type": team_type,
                         "athletes": {       # Discipline to athletes
-                            "lead": {},     # Athletes to points and places
-                            "speed": {},    # Athletes to points and places
-                            "boulder": {}   # Athletes to points and places
+                            "prowadzenie": {},     # Athletes to points and places
+                            "czas": {},    # Athletes to points and places
+                            "bouldering": {}   # Athletes to points and places
                         },
                         "points": 0
                     }
@@ -167,9 +211,9 @@ class AthleteAnalyzerApp(QMainWindow):
         # Calculate team points and check if teams are classified.
         for team_name, team_data in self.team_results.items():
             # Check if a team is classified:
-            # At least NUMBER_OF_COUNTED_ATHLETES(3 for men, 2 for women) athletes competed and finish at least 2 disciplines
+            # At least self.number_of_counted_athletes(3 for men, 2 for women) athletes competed and finished at least 2 disciplines
             athlete_scores = {}
-            for disc in ["lead", "speed", "boulder"]:
+            for disc in ["prowadzenie", "czas", "bouldering"]:
                 for ath_name, results in team_data["athletes"][disc].items():
                     if ath_name not in athlete_scores:
                         athlete_scores[ath_name] = []
@@ -180,16 +224,16 @@ class AthleteAnalyzerApp(QMainWindow):
             for name, results in athlete_scores.items():
                 if len(results) > 2:
                     ok_athletes_count += 1
-            if len(athlete_scores) >= NUMBER_OF_COUNTED_ATHLETES and ok_athletes_count >= NUMBER_OF_COUNTED_ATHLETES:
+            if len(athlete_scores) >= self.number_of_counted_athletes and ok_athletes_count >= self.number_of_counted_athletes:
                 classified = True
 
             # Calculate points
             points = []
-            for disc in ["lead", "speed", "boulder"]:
+            for disc in ["prowadzenie", "czas", "bouldering"]:
                 athletes = team_data["athletes"][disc]
                 valid_athletes = [ath for ath in athletes.values() if ath["points"] != -1]
                 top_athletes = sorted(valid_athletes, key=lambda x: x["points"], reverse=True)
-                points.extend([ath["points"] for ath in top_athletes[:NUMBER_OF_COUNTED_ATHLETES]])
+                points.extend([ath["points"] for ath in top_athletes[:self.number_of_counted_athletes]])
             team_data["points"] = -1 if not classified else sum(points)
 
         pprint(self.team_results, indent=2, width=50, sort_dicts=False)
@@ -199,13 +243,55 @@ class AthleteAnalyzerApp(QMainWindow):
         # except Exception as e:
         #     QMessageBox.critical(self, "Błąd", f"Wystąpił błąd podczas analizy:\n{str(e)}")
     
+    def export_to_excel(self):
+        if len(self.team_results) == 0:
+            QMessageBox.warning(self, "Błąd", "Przelicz wyniki przez eksportowaniem!")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Zapisz wyniki",
+            f"wyniki_drużynowe_amp_{"M" if self.number_of_counted_athletes == 3 else "K"}.xlsx",
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+            
+        # try:
+        data = []
+        for team_name, team_data in self.team_results.items():
+            data.append({
+                'Uczelnia': team_name,
+                'Typ uczelni': team_data['type'],
+                'Punkty': team_data['points']
+            })
+            
+        df = pd.DataFrame(data)
+        df = df.sort_values('Punkty', ascending=False)
+        df.insert(0, 'Miejsce', range(1, len(df) + 1))
+        df.to_excel(file_path, index=False, sheet_name=f"AMP_Klasyfikacja_Drużynowa_{"M" if self.number_of_counted_athletes == 3 else "K"}")
+        
+        QMessageBox.information(self, "Sukces", f"Wyniki zostały zapisane do pliku:\n{file_path}")
+            
+        # except Exception as e:
+            # QMessageBox.critical(self, "Błąd", f"Wystąpił błąd podczas eksportu:\n{str(e)}")
+
     def display_results(self):
         self.tree.clear()
         
-        # teams_data = []
-        # for team_name, team_data in self.team_results.items():
-        #     team_data["name"] = team_name
-        #     teams_data.append(teams_data)
+        unique_types = set()
+        for uni_data in self.team_results.values():
+            unique_types.add(uni_data.get('type', 'Unknown'))
+        
+        current_filter = self.filter_combo.currentText()
+        self.filter_combo.clear()
+        self.filter_combo.addItem("Wszystkie")
+        self.filter_combo.addItems(sorted(unique_types))
+        
+        index = self.filter_combo.findText(current_filter)
+        if index >= 0:
+            self.filter_combo.setCurrentIndex(index)
 
         teams_data = []
         for uni_name, uni_data in self.team_results.items():
@@ -219,8 +305,6 @@ class AthleteAnalyzerApp(QMainWindow):
 
         teams_data.sort(key=lambda x: x["points"], reverse=True)
         
-
-
         for position, team in enumerate(teams_data, 1):
             team_item = QTreeWidgetItem(self.tree)
             
@@ -228,40 +312,29 @@ class AthleteAnalyzerApp(QMainWindow):
             team_item.setText(1, team['name'])
             team_item.setText(2, team.get('type', 'Nieznany typ uczelni'))
             
-            # Punkty i status
             if team['points'] == -1:
                 team_item.setText(3, "N/A")
                 team_item.setForeground(1, Qt.GlobalColor.red)
             else:
                 team_item.setText(3, str(team['points']))
                 team_item.setForeground(4, Qt.GlobalColor.darkGreen)
-            
-            # Kolorowanie podium
-            # if position <= 3 and team['points'] != -1:
-            #     colors = [QColor(255, 215, 0), QColor(192, 192, 192), QColor(205, 127, 50)]
-            #     for col in range(5):
-            #         team_item.setBackground(col, colors[position-1])
-            
-            # Szczegóły wyników
+                        
             self.add_athlete_details(team_item, team.get('athletes', {}))
             
-            # Rozwijanie tylko dla klasyfikowanych
-            team_item.setExpanded(True)
-
     def add_athlete_details(self, parent_item, athletes_data):
         details_item = QTreeWidgetItem(parent_item)
-        details_item.setText(0, "Szczegóły wyników")
+        details_item.setText(0, "Szczegóły")
         
         for discipline, athletes in athletes_data.items():
             discipline_item = QTreeWidgetItem(details_item)
-            discipline_item.setText(0, f"Konkurencja: {discipline.capitalize()}")
+            discipline_item.setText(0, f" {discipline.capitalize()}")
             
             for athlete_name, results in athletes.items():
                 athlete_item = QTreeWidgetItem(discipline_item)
                 athlete_item.setText(0, athlete_name)
                 
                 if results['points'] == -1:
-                    athlete_item.setText(1, "Nie ukończył")
+                    athlete_item.setText(1, "Nie ukończył" if self.number_of_counted_athletes == 3 else "Nie ukończyła")
                     athlete_item.setForeground(1, Qt.GlobalColor.gray)
                 else:
                     athlete_item.setText(1, f"Miejsce: {results['place']}")
