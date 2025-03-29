@@ -34,3 +34,8 @@ Numer Startowyy | Imię i Nazwisko |       Uczelnia            | Typ Uczelni   |
 ## Dodatkowe informacje
 - Written in Rust because why not.
 - Available for Windows, MacOS and Linux
+
+## Pytania
+- DNF liczy się jako osoba startujaca w konkurencji prawda?
+- Czy osoby ktore w czasówkach maja wynik DNF mają eqaequo ostatnie miejsce?
+- Osoby niestartujące w danej konkurencji mogą pojawić się w tabeli, ale w kolumnie miejsce powinnien pojawić wówczas wynik "DNS"
