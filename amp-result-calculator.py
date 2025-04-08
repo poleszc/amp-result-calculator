@@ -9,6 +9,8 @@ from PyQt6.QtCore import Qt
 import pandas as pd
 from pprint import pprint
 
+DEBUG = True
+
 ID_TO_DISCIPLINE = {
     0: "Prowadzenie:          ",
     1: "Wspinanie na czas:",
@@ -100,6 +102,8 @@ class AthleteAnalyzerApp(QMainWindow):
         self.filter_combo.currentTextChanged.connect(self.filter_results)
         filter_layout.addWidget(filter_label)
         filter_layout.addWidget(self.filter_combo)
+        self.participants_label = QLabel("Brak")
+        filter_layout.addWidget(self.participants_label)
         filter_layout.addStretch()
         
         main_layout.addLayout(filter_layout)
@@ -150,6 +154,19 @@ class AthleteAnalyzerApp(QMainWindow):
                 item_type = item.text(2)
                 item.setHidden(item_type != selected_type)
 
+    # Calculates the number of points for exaqueo places.
+    # Mean of points which they would have gotten if there where no same places
+    # For example:
+    # If A, B and C placed both on the 8th place in bouldernng and the number of competitors 
+    # is 100 then their score is:
+    # ((100 - 7) + (100 - 8) + (100 - 9) ) / 3 = 92
+    def _calculate_points_for_ex_aqueo(self, place: int, same_place_count: int) :
+        points = 0
+        for i in range(same_place_count):
+            points += self.max_participants - (place + i) + 1
+        points /= same_place_count
+        return points
+
     def analyze_files(self):
         if None in self.file_paths:
             QMessageBox.warning(self, "Błąd", "Proszę wybrać wszystkie 3 pliki!")
@@ -162,18 +179,29 @@ class AthleteAnalyzerApp(QMainWindow):
         speed = pd.read_excel(self.file_paths[1])
         boulder = pd.read_excel(self.file_paths[2])
 
-        print(lead.columns)
-        print(len(lead))
+        if DEBUG:
+            print(f"DEBUG: Lead athlete size: {len(lead.columns), len(lead)}")
+            print(f"DEBUG: Boulder athlete size: {len(boulder.columns), len(boulder)}")
+            print(f"DEBUG: Speed athlete size: {len(speed.columns), len(speed)}")
+
+
 
         # Calculate the max number of participants accross all disciplines
-        for disc in [lead, speed, boulder]:
+        max_count_disc = 0
+        for ix, disc in enumerate([lead, speed, boulder]):
             participant_count = len(disc[disc["Miejsce"] != "DNS"])
-            self.max_participants = participant_count if participant_count > self.max_participants else self.max_participants
-            print(participant_count)
 
+            if participant_count > self.max_participants:
+                self.max_participants = participant_count
+                max_count_disc = ix
+
+        self.participants_label.setText(f"Liczba zawodników użyta do obliczeń punktów: {self.max_participants}(z konkurencji: {ID_TO_DISCIPLINE[max_count_disc]})")
+        if DEBUG:
+            print(f"DEBUG: Participant count is: {self.max_participants}\n")
         # Populate the team results
         for ix, disc in enumerate([lead, speed, boulder]):
-            print(IX_TO_DISCIPLINE[ix])
+            if DEBUG:
+                print(f"================{IX_TO_DISCIPLINE[ix].upper()}================")
             for _, row in disc.iterrows():
                 team_name = str(row["Uczelnia"])
                 team_type = str(row["Typ"])
@@ -185,22 +213,40 @@ class AthleteAnalyzerApp(QMainWindow):
 
                 if row["Miejsce"] != "DNS":
                     athlete_place = int(row["Miejsce"]) if row["Miejsce"] != "DNF" else len(speed[~speed["Miejsce"].isin(["DNS", "DNF"])])
-                    # Athlete points are calculated as follows;
-                    # 1 place -> n + 1 points(this is not a mistype, we add a point for winners)
-                    # 2 place -> n - 1 points
-                    # 3 place -> n - 2 points
-                    # m place -> n - m + 1
-                    athlete_points = self.max_participants - athlete_place + 1 
-                    if athlete_place == 1:
-                        athlete_points += 1
+                    
+                    # For ex aqueo places
+                    same_place_count = len(disc[disc["Miejsce"] == athlete_place])
+                    # same_place = len(disc[disc["Miejsce"] == str(athlete_place)])
+
+                    if same_place_count > 1: # Ex aqueo places
+                        athlete_points = self._calculate_points_for_ex_aqueo(athlete_place, same_place_count)
+                        if DEBUG:
+                            print(f"DEBUG: Found exaqueo places for: {athlete_name}")
+                            print(f"       Same place count: {same_place_count}")
+                            print(disc[disc["Miejsce"] == athlete_place])
+                            print(f"Points: {athlete_points}")
+
+                    else: 
+                        # Athlete points are calculated as follows;
+                        # 1 place -> n + 1 points(this is not a mistype, we add a point for winners)
+                        # 2 place -> n - 1 points
+                        # 3 place -> n - 2 points
+                        # m place -> n - m + 1
+                        athlete_points = self.max_participants - athlete_place + 1 
+                        if athlete_place == 1:
+                            athlete_points += 1
+                    if athlete_name == "Grzegorz Pieńkosz":
+                        print(athlete_place)
+                        print(athlete_points)
+                        print(same_place_count)
 
                 if team_name not in self.team_results:
                     self.team_results[team_name] = {
                         "type": team_type,
-                        "athletes": {       # Discipline to athletes
-                            "prowadzenie": {},     # Athletes to points and places
-                            "czas": {},    # Athletes to points and places
-                            "bouldering": {}   # Athletes to points and places
+                        "athletes": {           # Discipline to athletes
+                            "prowadzenie":  {}, # Athletes to points and places
+                            "czas":         {}, # Athletes to points and places
+                            "bouldering":   {}  # Athletes to points and places
                         },
                         "points": 0
                     }
@@ -236,7 +282,8 @@ class AthleteAnalyzerApp(QMainWindow):
                 points.extend([ath["points"] for ath in top_athletes[:self.number_of_counted_athletes]])
             team_data["points"] = -1 if not classified else sum(points)
 
-        pprint(self.team_results, indent=2, width=50, sort_dicts=False)
+        if DEBUG:
+            pprint(self.team_results, indent=1, width=80, sort_dicts=False)
 
         self.display_results()
         
@@ -322,11 +369,11 @@ class AthleteAnalyzerApp(QMainWindow):
             self.add_athlete_details(team_item, team.get('athletes', {}))
             
     def add_athlete_details(self, parent_item, athletes_data):
-        details_item = QTreeWidgetItem(parent_item)
-        details_item.setText(0, "Szczegóły")
+        # details_item = QTreeWidgetItem(parent_item)
+        # details_item.setText(0, "Szczegóły")
         
         for discipline, athletes in athletes_data.items():
-            discipline_item = QTreeWidgetItem(details_item)
+            discipline_item = QTreeWidgetItem(parent_item)
             discipline_item.setText(0, f" {discipline.capitalize()}")
             
             for athlete_name, results in athletes.items():

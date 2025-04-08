@@ -32,7 +32,6 @@ Numer Startowyy | Imię i Nazwisko |       Uczelnia            | Typ Uczelni   |
 - Po obliczeniu wyników będzie udostępniona możliwość zapisania ich w plikach `xlsx`
 
 ## Dodatkowe informacje
-- Written in Rust because why not.
 - Available for Windows, MacOS and Linux
 
 ## Pytania
@@ -40,3 +39,4 @@ Numer Startowyy | Imię i Nazwisko |       Uczelnia            | Typ Uczelni   |
 - Czy osoby ktore w czasówkach maja wynik DNF mają eqaequo ostatnie miejsce?
 - Osoby niestartujące w danej konkurencji mogą pojawić się w tabeli, ale w kolumnie miejsce powinnien pojawić wówczas wynik "DNS"
 - Czy wystartuje i ukończy to znaczy ze na czasówce nie mozna spaśc?
+- Napisać, że w wynikach moze być DNS w kolumnie który sie nie liczy
