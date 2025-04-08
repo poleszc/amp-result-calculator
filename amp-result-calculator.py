@@ -9,7 +9,7 @@ from PyQt6.QtCore import Qt
 import pandas as pd
 from pprint import pprint
 
-DEBUG = True
+DEBUG = False
 
 ID_TO_DISCIPLINE = {
     0: "Prowadzenie:          ",
@@ -172,123 +172,126 @@ class AthleteAnalyzerApp(QMainWindow):
             QMessageBox.warning(self, "Błąd", "Proszę wybrać wszystkie 3 pliki!")
             return
         
-        # try:
-        self.results = []
-        print(self.file_paths)
-        lead = pd.read_excel(self.file_paths[0])
-        speed = pd.read_excel(self.file_paths[1])
-        boulder = pd.read_excel(self.file_paths[2])
+        try:
+            self.results = []
+            self.max_participants = 0
+            self.team_results = {}
+            lead = pd.read_excel(self.file_paths[0])
+            speed = pd.read_excel(self.file_paths[1])
+            boulder = pd.read_excel(self.file_paths[2])
 
-        if DEBUG:
-            print(f"DEBUG: Lead athlete size: {len(lead.columns), len(lead)}")
-            print(f"DEBUG: Boulder athlete size: {len(boulder.columns), len(boulder)}")
-            print(f"DEBUG: Speed athlete size: {len(speed.columns), len(speed)}")
-
-
-
-        # Calculate the max number of participants accross all disciplines
-        max_count_disc = 0
-        for ix, disc in enumerate([lead, speed, boulder]):
-            participant_count = len(disc[disc["Miejsce"] != "DNS"])
-
-            if participant_count > self.max_participants:
-                self.max_participants = participant_count
-                max_count_disc = ix
-
-        self.participants_label.setText(f"Liczba zawodników użyta do obliczeń punktów: {self.max_participants}(z konkurencji: {ID_TO_DISCIPLINE[max_count_disc]})")
-        if DEBUG:
-            print(f"DEBUG: Participant count is: {self.max_participants}\n")
-        # Populate the team results
-        for ix, disc in enumerate([lead, speed, boulder]):
             if DEBUG:
-                print(f"================{IX_TO_DISCIPLINE[ix].upper()}================")
-            for _, row in disc.iterrows():
-                team_name = str(row["Uczelnia"])
-                team_type = str(row["Typ"])
-                athlete_name = str(row["Imię i Nazwisko"])
-    
-                # -1 for athletes which didn't compete
-                athlete_place = -1
-                athlete_points = -1
+                print(f"DEBUG: Lead athlete size: {len(lead.columns), len(lead)}")
+                print(f"DEBUG: Boulder athlete size: {len(boulder.columns), len(boulder)}")
+                print(f"DEBUG: Speed athlete size: {len(speed.columns), len(speed)}")
 
-                if row["Miejsce"] != "DNS":
-                    athlete_place = int(row["Miejsce"]) if row["Miejsce"] != "DNF" else len(speed[~speed["Miejsce"].isin(["DNS", "DNF"])])
-                    
-                    # For ex aqueo places
-                    same_place_count = len(disc[disc["Miejsce"] == athlete_place])
-                    # same_place = len(disc[disc["Miejsce"] == str(athlete_place)])
+            # Calculate the max number of participants accross all disciplines
+            max_count_disc = 0
+            for ix, disc in enumerate([lead, speed, boulder]):
+                participant_count = len(disc[disc["Miejsce"] != "DNS"])
 
-                    if same_place_count > 1: # Ex aqueo places
-                        athlete_points = self._calculate_points_for_ex_aqueo(athlete_place, same_place_count)
-                        if DEBUG:
-                            print(f"DEBUG: Found exaqueo places for: {athlete_name}")
-                            print(f"       Same place count: {same_place_count}")
-                            print(disc[disc["Miejsce"] == athlete_place])
-                            print(f"Points: {athlete_points}")
+                if participant_count > self.max_participants:
+                    self.max_participants = participant_count
+                    max_count_disc = ix
 
-                    else: 
-                        # Athlete points are calculated as follows;
-                        # 1 place -> n + 1 points(this is not a mistype, we add a point for winners)
-                        # 2 place -> n - 1 points
-                        # 3 place -> n - 2 points
-                        # m place -> n - m + 1
-                        athlete_points = self.max_participants - athlete_place + 1 
-                        if athlete_place == 1:
-                            athlete_points += 1
-                    if athlete_name == "Grzegorz Pieńkosz":
-                        print(athlete_place)
-                        print(athlete_points)
-                        print(same_place_count)
-
-                if team_name not in self.team_results:
-                    self.team_results[team_name] = {
-                        "type": team_type,
-                        "athletes": {           # Discipline to athletes
-                            "prowadzenie":  {}, # Athletes to points and places
-                            "czas":         {}, # Athletes to points and places
-                            "bouldering":   {}  # Athletes to points and places
-                        },
-                        "points": 0
-                    }
-
-                self.team_results[team_name]["athletes"][IX_TO_DISCIPLINE[ix]][athlete_name] = {"place": athlete_place, "points": athlete_points}
-            
-
-        # Calculate team points and check if teams are classified.
-        for team_name, team_data in self.team_results.items():
-            # Check if a team is classified:
-            # At least self.number_of_counted_athletes(3 for men, 2 for women) athletes competed and finished at least 2 disciplines
-            athlete_scores = {}
-            for disc in ["prowadzenie", "czas", "bouldering"]:
-                for ath_name, results in team_data["athletes"][disc].items():
-                    if ath_name not in athlete_scores:
-                        athlete_scores[ath_name] = []
-                    athlete_scores[ath_name].append(results["points"])
-            
-            classified = False
-            ok_athletes_count = 0
-            for name, results in athlete_scores.items():
-                if len(results) > 2:
-                    ok_athletes_count += 1
-            if len(athlete_scores) >= self.number_of_counted_athletes and ok_athletes_count >= self.number_of_counted_athletes:
-                classified = True
-
-            # Calculate points
-            points = []
-            for disc in ["prowadzenie", "czas", "bouldering"]:
-                athletes = team_data["athletes"][disc]
-                valid_athletes = [ath for ath in athletes.values() if ath["points"] != -1]
-                top_athletes = sorted(valid_athletes, key=lambda x: x["points"], reverse=True)
-                points.extend([ath["points"] for ath in top_athletes[:self.number_of_counted_athletes]])
-            team_data["points"] = -1 if not classified else sum(points)
-
-        if DEBUG:
-            pprint(self.team_results, indent=1, width=80, sort_dicts=False)
-
-        self.display_results()
+            self.participants_label.setText(f"Liczba zawodników użyta do obliczeń punktów: {self.max_participants}(z konkurencji: {IX_TO_DISCIPLINE[max_count_disc]})")
+            if DEBUG:
+                print(f"DEBUG: Participant count is: {self.max_participants}\n")
+            # Populate the team results
+            for ix, disc in enumerate([lead, speed, boulder]):
+                if DEBUG:
+                    print(f"================{IX_TO_DISCIPLINE[ix].upper()}================")
+                for _, row in disc.iterrows():
+                    team_name = str(row["Uczelnia"])
+                    team_type = str(row["Typ"])
+                    athlete_name = str(row["Imię i Nazwisko"])
         
-        # except Exception as e:
-        #     QMessageBox.critical(self, "Błąd", f"Wystąpił błąd podczas analizy:\n{str(e)}")
+                    # -1 for athletes which didn't compete
+                    athlete_place = -1
+                    athlete_points = -1
+
+                    if row["Miejsce"] != "DNS":
+                        athlete_place = int(row["Miejsce"]) if row["Miejsce"] != "DNF" else len(speed[~speed["Miejsce"].isin(["DNS", "DNF"])])
+                        
+                        # For ex aqueo places
+                        same_place_count = len(disc[disc["Miejsce"] == athlete_place])
+                        # same_place = len(disc[disc["Miejsce"] == str(athlete_place)])
+
+                        if same_place_count > 1: # Ex aqueo places
+                            athlete_points = self._calculate_points_for_ex_aqueo(athlete_place, same_place_count)
+                            if DEBUG:
+                                print(f"DEBUG: Found exaqueo places for: {athlete_name}")
+                                print(f"       Same place count: {same_place_count}")
+                                print(disc[disc["Miejsce"] == athlete_place])
+                                print(f"Points: {athlete_points}")
+
+                        else: 
+                            # Athlete points are calculated as follows;
+                            # 1 place -> n + 1 points(this is not a mistype, we add a point for winners)
+                            # 2 place -> n - 1 points
+                            # 3 place -> n - 2 points
+                            # m place -> n - m + 1
+                            athlete_points = self.max_participants - athlete_place + 1 
+                            if athlete_place == 1:
+                                athlete_points += 1
+                        if athlete_name == "Grzegorz Pieńkosz":
+                            print(athlete_place)
+                            print(athlete_points)
+                            print(same_place_count)
+
+                    if team_name not in self.team_results:
+                        self.team_results[team_name] = {
+                            "type": team_type,
+                            "athletes": {           # Discipline to athletes
+                                "prowadzenie":  {}, # Athletes to points and places
+                                "czas":         {}, # Athletes to points and places
+                                "bouldering":   {}  # Athletes to points and places
+                            },
+                            "points": 0
+                        }
+
+                    self.team_results[team_name]["athletes"][IX_TO_DISCIPLINE[ix]][athlete_name] = {"place": athlete_place, "points": athlete_points}
+                
+
+            # Calculate team points and check if teams are classified.
+            for team_name, team_data in self.team_results.items():
+                # Check if a team is classified:
+                # At least self.number_of_counted_athletes(3 for men, 2 for women) athletes competed and finished at least 2 disciplines
+                athlete_scores = {}
+                for disc in ["prowadzenie", "czas", "bouldering"]:
+                    for ath_name, results in team_data["athletes"][disc].items():
+                        if ath_name not in athlete_scores:
+                            athlete_scores[ath_name] = []
+                        athlete_scores[ath_name].append(results["points"])
+                
+                if DEBUG:
+                    if team_name == "UŁ Łódź":
+                        print(athlete_scores)
+
+                classified = False
+                ok_athletes_count = 0
+                for name, results in athlete_scores.items():
+                    if len(results) >= 2:
+                        ok_athletes_count += 1
+                if len(athlete_scores) >= self.number_of_counted_athletes and ok_athletes_count >= self.number_of_counted_athletes:
+                    classified = True
+
+                # Calculate points
+                points = []
+                for disc in ["prowadzenie", "czas", "bouldering"]:
+                    athletes = team_data["athletes"][disc]
+                    valid_athletes = [ath for ath in athletes.values() if ath["points"] != -1]
+                    top_athletes = sorted(valid_athletes, key=lambda x: x["points"], reverse=True)
+                    points.extend([ath["points"] for ath in top_athletes[:self.number_of_counted_athletes]])
+                team_data["points"] = -1 if not classified else sum(points)
+
+            if DEBUG:
+                pprint(self.team_results, indent=1, width=80, sort_dicts=False)
+
+            self.display_results()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd", f"Wystąpił błąd podczas analizy, sprawdź poprawność plików z wynikami!\n{str(e)}")
     
     def export_to_excel(self):
         if len(self.team_results) == 0:
@@ -305,24 +308,23 @@ class AthleteAnalyzerApp(QMainWindow):
         if not file_path:
             return
             
-        # try:
-        data = []
-        for team_name, team_data in self.team_results.items():
-            data.append({
-                'Uczelnia': team_name,
-                'Typ uczelni': team_data['type'],
-                'Punkty': team_data['points']
-            })
+        try:
+            data = []
+            for team_name, team_data in self.team_results.items():
+                data.append({
+                    'Uczelnia': team_name,
+                    'Typ uczelni': team_data['type'],
+                    'Punkty': team_data['points']
+                })
+                
+            df = pd.DataFrame(data)
+            df = df.sort_values('Punkty', ascending=False)
+            df.insert(0, 'Miejsce', range(1, len(df) + 1))
+            df.to_excel(file_path, index=False, sheet_name=f"AMP_Klasyfikacja_Drużynowa_{"M" if self.number_of_counted_athletes == 3 else "K"}")
             
-        df = pd.DataFrame(data)
-        df = df.sort_values('Punkty', ascending=False)
-        df.insert(0, 'Miejsce', range(1, len(df) + 1))
-        df.to_excel(file_path, index=False, sheet_name=f"AMP_Klasyfikacja_Drużynowa_{"M" if self.number_of_counted_athletes == 3 else "K"}")
-        
-        QMessageBox.information(self, "Sukces", f"Wyniki zostały zapisane do pliku:\n{file_path}")
-            
-        # except Exception as e:
-            # QMessageBox.critical(self, "Błąd", f"Wystąpił błąd podczas eksportu:\n{str(e)}")
+            QMessageBox.information(self, "Sukces", f"Wyniki zostały zapisane do pliku:\n{file_path}")   
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd", f"Wystąpił błąd podczas eksportu:\n{str(e)}")
 
     def display_results(self):
         self.tree.clear()
@@ -355,7 +357,7 @@ class AthleteAnalyzerApp(QMainWindow):
         for position, team in enumerate(teams_data, 1):
             team_item = QTreeWidgetItem(self.tree)
             
-            team_item.setText(0, str(position) if team['points'] != -1 else "-")
+            team_item.setText(0, str(position) if team['points'] != -1 else "Nieklasyfikowana")
             team_item.setText(1, team['name'])
             team_item.setText(2, team.get('type', 'Nieznany typ uczelni'))
             
@@ -363,15 +365,13 @@ class AthleteAnalyzerApp(QMainWindow):
                 team_item.setText(3, "N/A")
                 team_item.setForeground(1, Qt.GlobalColor.red)
             else:
-                team_item.setText(3, str(team['points']))
+                points = team['points']
+                team_item.setText(3, str(int(team['points'])) if isinstance(points, float) and points.is_integer() else str(team["points"]))
                 team_item.setForeground(4, Qt.GlobalColor.darkGreen)
                         
             self.add_athlete_details(team_item, team.get('athletes', {}))
             
     def add_athlete_details(self, parent_item, athletes_data):
-        # details_item = QTreeWidgetItem(parent_item)
-        # details_item.setText(0, "Szczegóły")
-        
         for discipline, athletes in athletes_data.items():
             discipline_item = QTreeWidgetItem(parent_item)
             discipline_item.setText(0, f" {discipline.capitalize()}")
